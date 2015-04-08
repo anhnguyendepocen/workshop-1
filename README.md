@@ -1,2 +1,2 @@
-# clinic
+# Clinic
 Repository for the clinic.
