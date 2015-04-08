@@ -1,2 +1,2 @@
 # Clinic
-Repository for the clinic.
+Repository for the clinic (under construction).
