@@ -1,2 +1,2 @@
-# Clinic
-Repository for the clinic (under construction).
+# Workshop
+Repository for the workshop (under construction).
