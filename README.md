@@ -4,7 +4,7 @@ This repository contains the material for the *Software Engineering for Economis
 
 Additional Information:
 
-http://www.policy-lab.org/softEcon/worshhop
+http://www.policy-lab.org/softEcon/workshop
 
 Contact:
 
