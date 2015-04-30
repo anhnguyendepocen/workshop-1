@@ -16,5 +16,5 @@ Contact:
 * [Bocar Ba](https://github.com/bocarba) on *Wages, Job Mobility, and Duration Dependence: A Proposed Estimation Toolbox*
 * [Michael Kirker](https://github.com/mkirker) on *Solving Hamilton-Jacobi-Bellman Equations in a Search and Matching Model*
 
-Details: 5:00-7:00 pm, Cobb Hall, #122
+Details: 5:00-7:00 pm, Cobb Hall, Room 122
 
