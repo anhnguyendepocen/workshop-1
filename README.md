@@ -10,7 +10,7 @@ Contact:
 
 ## Meetings
 
-### 05/07/15**
+### 05/07/15
 
 * [Chase Corbin](https://github.com/cocorbin) on *Ability, Schooling Quality, and Peer Networks: Estimating Returns to Academic Success*
 * [Bocar Ba](https://github.com/bocarba) on *Wages, Job Mobility, and Duration Dependence: A Proposed Estimation Toolbox*
