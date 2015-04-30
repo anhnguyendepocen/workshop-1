@@ -2,7 +2,7 @@
 
 This repository contains the material for the *Software Engineering for Economists* workshop.
 
-This Workshop provides an informal meeting of students working on computational research projects. Students present their current work and solicit input from their peers to improve their implementations.
+This Workshop provides an informal setting for students to discuss their computational research. Students present their current work and solicit input from their peers to improve their implementations.
 
 Contact:
 
