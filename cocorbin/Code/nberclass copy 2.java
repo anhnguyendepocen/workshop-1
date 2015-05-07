@@ -56,8 +56,10 @@ public class nberclass {
 	         * look at everybody's profile page and store their personal
 	         * website's URL
 	         */
+	         
+/*
 	        for ( Element elPeople : ePeople ) {
-	        	
+*/	        	
 	        	
 	/****************************************************************
 	* DON'T CRASH THE SERVER!
@@ -76,7 +78,7 @@ public class nberclass {
 	            System.out.print(elMember.html() + ",");
 	             */
 	          
-	            
+/*	            
 	           
 	            String Name = elPeople.html();
 	            String urlMember = elPeople.absUrl("href");
@@ -93,8 +95,10 @@ public class nberclass {
 	        	download(eMemberPDF, new File(Name + ".pdf"));
 	        	*/
 	        	
+/*	        	
 	        	for ( Element elMember : eMember) {
-	        		
+*/	        		
+	    
 	       /*
 	       ****************************************************************
 	       * DON'T CRASH THE SERVER!
@@ -106,7 +110,7 @@ public class nberclass {
 	 	    * DON'T CRASH THE SERVER! DON'T DELETE "sleep" !!!!!
 	 	    ***************************************************************
 	 	    */
-	 	        	
+/*	 	        	
 	        		try {
 	        			String webpage = elMember.absUrl("href");
 	        			Document dVita = Jsoup.connect(webpage)
@@ -129,7 +133,7 @@ public class nberclass {
 	        	}
 	        }
 	 }
-	        	 
+*/      	 
 
 	    /*
 	     ***************************************************************
