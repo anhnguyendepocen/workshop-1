@@ -9,15 +9,13 @@
 
 
 
-
-
 # ======================================================================================================================
 # LOAD RESOURCES AND PACKAGES
 # ======================================================================================================================
 # Import Python packages that will get used in the estimation of the model
 
 import numpy as np
-import matplotlib.pyplot as plt
+
 
 
 
@@ -34,7 +32,7 @@ import matplotlib.pyplot as plt
 # The continuous state space of productivity is approximated by a discrete grid
 
 grid_size = 25        # Number of grid points
-grid_max  = 5.0       # Maximium value in the grid
+grid_max  = 5.0       # Maximum value in the grid
 grid_min  = 0.0001    # Minimum value in the grid (a little bit above zero)
 
 
@@ -86,14 +84,14 @@ para['q_cd']   = 0.25  # Cobb-douglas parameter on v inside q(theta)
 # Convergence criteria parameters
 #----------------------------------------------------------
 
-# Fudge factor (ff) = how much weight to give to the new draw (and 1-ff to the old draw) when updating the value of variables each iteration.
-# Note, a lower "ff" value means the code takes longer to run, but is generally more stable in converging
-
+# Fudge factor (ff) = how much weight to give to the new draw (and 1-ff to the old draw) when updating the value of
+# variables each iteration. Note, a lower "ff" value means the code takes longer to run, but is generally more stable in
+# converging.
 ff_pol      = 0.1   # Fudge factor when updating policy rules
 ff_vf       = 0.1   # Fudge factor when updating value functions
 ff_phi      = 0.1   # Fudge factor when updating the productivity distribution and growth rate
 
-# Covergence tolerance criteria = determines when to stop iterating because convergence has been reached.
+# Convergence tolerance criteria = determines when to stop iterating because convergence has been reached.
 tol_pol     = 0.0001    # How accurate convergence in policy rules must be
 tol_vf      = 0.0001    # How accurate convergence in value functions must be
 tol_phi     = 0.0001    # How accurate convergence in distribution must be
@@ -103,8 +101,7 @@ tol_phi     = 0.0001    # How accurate convergence in distribution must be
 max_pol_iter    = 300   # Maximum number of iterations to try before we declare policy code does not converge
 max_vf_iter     = 300   # Maximum number of iterations to try before we declare value function code does not converge
 max_phi_iter    = 300   # Maximum number of iterations to try before we declare productivity dist code does not converge
-
-max_main_iter   = 300
+max_main_iter   = 300   # Maximum number of iterations to run in the main loop
 
 print_skip = 10 # Print the convergence progress for every `print_skip'-th iteration
 
@@ -114,7 +111,7 @@ print_skip = 10 # Print the convergence progress for every `print_skip'-th itera
 
 
 # ======================================================================================================================
-#   OTHER PARAMETERIZATIONS ETC
+#   OTHER PARAMETERS IN THE MODEL
 # ======================================================================================================================
 # Based on the user input above, define other model parameters and distributions that are a function of the parameters
 # already defined.
@@ -128,19 +125,19 @@ phi_F =  para['lambda_F'] / para['delta_F'] * z_grid ** ( -1.0/para['delta_F'] -
 # Renormalize scale parameter
 para['lambda_F'] = para['lambda_F'] / sum(phi_F)
 
-phi_F = phi_F / sum(phi_F)
-
+phi_F = phi_F / sum(phi_F) # Now the sum of the PDF is one.
 
 
 # Determine scale and tail parameters for other distributions.
-para['delta_H'] = ( para['alpha']*para['delta_F']*(1.0-1.0/para['sigma']) -
+#----------------------------------------------------------
+
+# Tail parameter - dist of workers
+para['delta_Hw'] = ( para['alpha']*para['delta_F']*(1.0-1.0/para['sigma']) -
                     para['delta_F'] ) / ( (para['alpha']+para['delta_F'])*(1.0-1.0/para['sigma'])-1.0 )
 
-para['lambda_Hw'] = para['lambda_F']/para['delta_F'] * para['delta_H'] /        \
-                    np.dot(  z_grid**( (1.0/para['sigma']-1.0)/( para['alpha']*(1.0-1.0/para['sigma'])-1.0 )) , phi_F )
+# Tail parameter - knowledge transfer distribution
+para['delta_G'] = para['delta_F'] * para['delta_Hw'] / (para['delta_Hw'] - para['delta_F'] - para['delta_Hw']*para['delta_F'])
 
-
-para['delta_G'] = para['delta_F'] * para['delta_H'] / (para['delta_H'] - para['delta_F'] - para['delta_H']*para['delta_F']) #
 
 
 
@@ -148,81 +145,128 @@ para['delta_G'] = para['delta_F'] * para['delta_H'] / (para['delta_H'] - para['d
 
 
 # ======================================================================================================================
-#   Labor demand
+#  DEFINE FUNCTIONS
 # ======================================================================================================================
-# Given the distribution of productivity, solve for the labor demand for a firm at each grid point
-#
-# $$ l(z) = N z^{\frac{ 1/\sigma -1 }{ \alpha(1-1/\sigma)-1 }}  \int_{0}^{\infty} x^{\frac{ 1/\sigma -1 }{ \alpha(1-1/\sigma)-1 }}   \phi_{F}(x)dz  $$
-#
-# and
-#
-# $$ \phi_{Hw}(z) = \frac{ z^{  \frac{1/\sigma-1}{\alpha(1-1/\sigma)-1 } }  \phi_{F}(z)}{  \int_{0}^{\infty} x^{  \frac{1/\sigma-1}{\alpha(1-1/\sigma)-1 } }  \phi_{F}(x) \, dx  }$$
-
-def LaborDemand(para, z_grid, phi_F):
+# Define the functions used to construct various distributions and variables throughout the model. Due to the iterative
+# nature of the model's algorithm, we will have to construct these variable many times. So defining them as functions
+# rather than constructing them in-line makes the code more compact and easier to read
 
 
-    # Labor demanded by a firm at each grid point
-    #############################################
+
+def labor_demand(para, z_grid, phi_F):
+    """
+    Compute the array of labor demand by a firm at each point on the state grid.
+
+    Parameters
+    ----------
+     para: Dictionary of parameter values
+
+    z_grid: model productivity grid space
+
+    phi_F: PDF of firm productivity over the grid space
+
+
+    Returns
+    -------
+    Array: Number of workers demanded by a firm at each point on the grid space
+
+    """
+
     l_exp = ( ( 1.0/para['sigma'] -1.0 ) / ( para['alpha']*( 1.0-1.0/para['sigma'])-1.0 ) )
 
     return  para['N'] * z_grid ** l_exp / np.dot( z_grid ** l_exp , phi_F )
 
 
-l_z = LaborDemand(para, z_grid, phi_F)
+def dist_workers(para, z_grid, phi_F):
+    """
+    Compute the distribution of workers over the state grid.
+
+    Parameters
+    ----------
+    para: Dictionary of parameter values
+
+    z_grid: model productivity grid space
+
+    phi_F: PDF of firm productivity over the grid space
 
 
-# The distribution of labor demand across all firms
-def DistWorkers(para, z_grid, phi_F):
+    Returns
+    -------
+    Array: PDF of the labor distribution over the state grid
+    """
 
     l_exp = ( ( 1.0/para['sigma'] -1.0 ) / ( para['alpha']*( 1.0-1.0/para['sigma'])-1.0 ) )
+
     return z_grid ** l_exp * phi_F / np.dot( z_grid ** l_exp , phi_F)
 
-phi_Hw = DistWorkers(para, z_grid, phi_F)
+
+def gdp(para, z_grid, phi_F):
+    """
+    Compute Aggregate output (gdp) in the economy.
+
+    Parameters
+    ----------
+    para: Dictionary of parameter values
+
+    z_grid: model productivity grid space
+
+    phi_F: PDF of firm productivity over the grid space
 
 
-
-
-# ======================================================================================================================
-#   GDP/Output
-# ======================================================================================================================
-# $$ Y(t) =	 N^{\alpha}		  \left[ \int_{0}^{\infty} z^{  \frac{  1/\sigma -1  } { \alpha(1-1/\sigma)-1 }  }    	 \phi_{F}(z) \, dz \right]^{\sigma/(\sigma-1) - \alpha}	$$
-
-
-def GDP(para, z_grid, phi_F):
+    Returns
+    -------
+    Float: Real output in the economy
+    """
 
     l_exp = ( ( 1.0/para['sigma'] -1.0 ) / ( para['alpha']*( 1.0-1.0/para['sigma'])-1.0 ) )
 
     return para['N'] ** para['alpha'] * np.dot( z_grid ** l_exp , phi_F) ** ( para['sigma']/( para['sigma']-1.0) - para['alpha'])
 
-Y = GDP(para, z_grid, phi_F)
+
+def wages(para, z_grid, phi_F):
+    """
+    Compute the market clearing wage rate for workers in the economy.
+
+    Parameters
+    ----------
+    para: Dictionary of parameter values
+
+    z_grid: model productivity grid space
+
+    phi_F: PDF of firm productivity over the grid space
 
 
+    Returns
+    -------
+    Float: Worker's wage rate in the economy
 
-# ======================================================================================================================
-#   Wages
-# ======================================================================================================================
-# $$ w =  N^{\alpha(1-1/\sigma)-1}  Y(t)^{1/\sigma} \alpha(1-1/\sigma)   \left[ \int_{0}^{\infty}   x^{	\frac{1/\sigma-1 }{ \alpha(1-1/\sigma)-1 } } 		 \phi_{F}(x) \, dx	\right]^{ 1 -\alpha(1-1/\sigma)   } $$
-
-
-def Wages(para, z_grid, phi_F):
+    """
 
     l_exp = ( ( 1.0/para['sigma'] -1.0 ) / ( para['alpha']*( 1.0-1.0/para['sigma'])-1.0) )
+
+    Y = gdp(para, z_grid, phi_F)
 
     return para['N'] ** ( para['alpha'] * ( 1.0 - 1/para['sigma'] )-1.0 ) * Y ** (1.0/para['sigma']) *    \
            para['alpha'] * (1.0-1.0/para['sigma'])  * np.dot( z_grid ** l_exp , phi_F) ** (1.0 - para['alpha'] * (1.0- 1.0/para['sigma']))
 
-w = Wages(para, z_grid, phi_F)
+
+def firm_revenue(para, z_grid, phi_F):
+    """
+    Compute the array of firm revenue at each point on the state grid.
+
+    Parameters
+    ----------
+    para: Dictionary of parameter values
+
+    z_grid: model productivity grid space
+
+    phi_F: PDF of firm productivity over the grid space
 
 
-
-# ======================================================================================================================
-#   Firm Revenue
-# ======================================================================================================================
-# $$ p(z)y(z) =		N^{\alpha}	z^{	\frac{1/\sigma-1}{\alpha(1-1/\sigma)-1} }			\left[\int_{0}^{\infty}x^{\frac{1/\sigma-1}{\alpha(1-1/\sigma)-1}}\phi_{F}(x)\,dx\right]^{  \frac{1-\alpha \sigma + \alpha }{(\sigma-1)}
-#  } $$
-
-
-def FirmRev(para, z_grid, phi_F):
+    Returns
+    -------
+    Array: Firm revenue at each point on the grid space
+    """
 
     l_exp = ( ( 1.0/para['sigma'] -1.0 ) / ( para['alpha']*( 1.0-1.0/para['sigma'])-1.0 ) )
 
@@ -230,69 +274,11 @@ def FirmRev(para, z_grid, phi_F):
                                             ( ( 1.0 - para['alpha']*para['sigma']+para['alpha']) / ( para['sigma'] - 1.0 ) )
 
 
-firm_rev = FirmRev(para, z_grid, phi_F)
-
-
-
-
-
-
-
-
-# ======================================================================================================================
-#   INITIAL GUESSES
-# ======================================================================================================================
-# Define the initial values for value functions and policy rules. This is needed to start the algorithm.
-
-
-
-# Initial guesses for value functions
-#----------------------------------------------------------
-
-vf_Pi   = (firm_rev - w*l_z) / ( para['r'] - para['gamma'] ) # Value function of the firm
-
-vf_W    = w / ( para['r'] - para['gamma'] ) * np.ones(grid_size)
-
-
-vf_M = para['beta']/(1.0-para['beta'])*para['tau']*firm_rev + vf_W
-
-vf_M[vf_M<vf_W] = vf_W[vf_M<vf_W] + 0.000001 # Being a manager is always at least as good as being a worker
-
-
-
-
-# Initial guesses for policy rules
-#----------------------------------------------------------
-
-s_z = np.ones(grid_size)  # Guess for worker search intensity
-
-v_z = np.ones(grid_size)  # Guess for firm's vacancy posting rate
-
-phi_Hs = s_z  * phi_Hw / np.dot( s_z , phi_Hw  )
-
-
-# Initial guess for labor market conditions
-#----------------------------------------------------------
-
-theta   = 1.0/para['N']       # Guess for labor market tightness
-q_theta = para['q_norm'] * theta ** para['q_cd']    # Probability of matching with a worker given theta
-
-
-
-
-
-#=======================================================================================================================
-# FUNCTIONS AND SUBFUNCTIONS
-#=======================================================================================================================
-
-
-#=======================================================================================================================
-# Knowledge transfer probability (g)
-#=======================================================================================================================
-def TransProbVec(indx_x, indx_y, para=para, z_grid=z_grid):
+def trans_prob_vec(indx_x, indx_y, para=para, z_grid=z_grid):
     """
     Transition Probability Vector
-    Returns an array with the probability of the manager being able to transfer the amount of knowledge needed to reach any point between (and including) indx_x to indx_y
+    Returns an array with the probability of the manager being able to transfer the amount of knowledge needed to reach
+    each point between (and including) indx_x to indx_y
 
 
     Parameters
@@ -303,33 +289,32 @@ def TransProbVec(indx_x, indx_y, para=para, z_grid=z_grid):
 
     para: Dictionary of parameter values
 
-    z_grid: model gridspace
+    z_grid: model grid space
 
 
     Returns
     -------
     Array: Probability that productivity z can be obtained
-
     """
 
     shape = 1.0/para['delta_G'] # Distribution's shape parameter
 
-    # The take sub-sample of z_grid that is releveant (between indx_x and indx_y) and scale it relative to z_grid[indx_x]
-    scaled_grid = z_grid[ indx_x:(indx_y+1) ] / z_grid[indx_x] # Have to add one on because Python doesnt include end
+    # The take sub-sample of z_grid that is relevant (between indx_x and indx_y) and scale it relative to z_grid[indx_x]
+    scaled_grid = z_grid[ indx_x:(indx_y+1) ] / z_grid[indx_x] # Have to add one on because Python doesnt include end element
 
 
-    # Compute PDF on each scalled grid point by computing the CDF at each point, and then taking the difference
-    raw_CDF = np.hstack((1.0-scaled_grid ** (-shape), 1.0))
+    # Compute PDF on each scaled grid point by computing the CDF at each point, and then taking the difference
+    raw_CDF = np.hstack((1.0-scaled_grid ** (-shape), 1.0)) # Add 1 to the end of the array to give the value at final point
 
     return np.diff(raw_CDF)
 
 
-def TransProbIndiv(indx_z, indx_x, indx_y, para=para, z_grid=z_grid):
+def trans_prob_indiv(indx_z, indx_x, indx_y, para=para, z_grid=z_grid):
     """
     Transition Probability Individual
-    Returns the probability of transitioning to a single point indx_z.
+    Returns the probability of transitioning to a single point indx_z in [indx_x, indx_y]
 
-    Calls on TransProbVec and then just gives you the single value you were looking for
+    Calls trans_prob_vec and then just gives you the single value you were looking for
 
 
     Parameters
@@ -342,31 +327,29 @@ def TransProbIndiv(indx_z, indx_x, indx_y, para=para, z_grid=z_grid):
 
     para: Dictionary of parameter values
 
-    z_grid: model gridspace
+    z_grid: model grid space
 
     Returns
     -------
     Float: Probability that productivity z can be obtained
-
     """
 
-    prob_vec = TransProbVec(indx_x, indx_y, para=para, z_grid=z_grid)
+    prob_vec = trans_prob_vec(indx_x, indx_y, para, z_grid)
 
     return prob_vec[indx_z-indx_x]
 
 
-
-
-#=======================================================================================================================
-# Matrix of moving
-#=======================================================================================================================
-# A move from $x$ to $z$ is only possible if the value of being a manager at $z'$ is higher than the value of being a worker for the other company ($y$).
-#
-# Here I compute a transition like matrix that shows whether a worker at $y$ wil accept a managerial job at $z$.
-
-def CreateMoveMatrix(vf_M,vf_W):
+def create_move_matrix(vf_M,vf_W):
     """
-    Create a matrix of binary values showing which firms a worker will move to become a manager of given the value functions
+    Create a matrix of binary values showing which firms a worker will move to become a manager of given the value
+    functions.
+
+    The way to read the matrix is as follows:
+    *   Column j shows whether of not a worker at a firm on the j-th state grid value searching for a managerial job will
+            accept a managerial job at a firm if they were able to impart knowledge level i on the firm
+
+    *   Row i, shows which search workers will accept a managerial job at a firm that has productivity level z_grid[i]
+            after the worker takes the job
 
     Parameters
     ----------
@@ -377,13 +360,9 @@ def CreateMoveMatrix(vf_M,vf_W):
 
     Returns
     -------
-    out_matrix: array
+    out_matrix: array (grid_size x grid_size)
            Element (i,j) gives vf_M[z_grid[i]] > vf_W[z_grid[j]]
-
-           So we can read row i as which managers will take a job at z_grid[i].
-           And we can read column j as where will manager j take a job.
     """
-
 
     # Preallocate matrix
     out_matrix = np.zeros( (len(vf_M),len(vf_M)) )
@@ -392,20 +371,10 @@ def CreateMoveMatrix(vf_M,vf_W):
 
         out_matrix[indx_row,:] = vf_M[indx_row] > vf_W
 
-
     return out_matrix
 
 
-
-#=======================================================================================================================
-# Vacancy posting rate
-#=======================================================================================================================
-#
-# $$ \nu(z) 	 = 	\frac{1}{\psi}  q(\tilde{\theta}^{[j]}) \int_{z}^{\infty} \left( \int_{\bar{x}(y)}^{y} \left[  \widetilde{\Pi}^{[j]} (x) - \widetilde{\Pi}^{[j]} (z) \right] g(x,z,y) \, dx \right) \, \phi_{Hs}^{[j]} (y)  \, dy  $$
-
-
-
-def VacPost(indx_z, moving_matrix, para, q_theta, vf_Pi,  phi_Hs):
+def vac_post_rate(indx_z, moving_matrix, para, q_theta, vf_Pi,  phi_Hs):
     """
     Compute the vacancy posting rate of a firm with productivity z_grid[indx_z]
 
@@ -413,55 +382,53 @@ def VacPost(indx_z, moving_matrix, para, q_theta, vf_Pi,  phi_Hs):
     ----------
     indx_z: Index of the firm's productivity in z_grid
 
+    moving_matrix: Matrix showing which transitions between states are possible (which manager jobs workers will accept)
+
     para: Dictionary of model parameters
 
     q_theta: Probability of a firm matching with a worker
 
     vf_Pi: (Array) The value of being a firm at each grid point
 
-    moving_matrix: Matrix showing which transitions between states is possible (which workers will accept)
-
     phi_Hs: (Array) PDF of worker's search intensity distribution.
 
 
     Returns
     -------
-    vacancy posint rate (float)
+    Float: vacancy posing rate of firm with productivity z_grid[indx_z]
     """
 
 
-    # Pre-allocate vector array to hold value of inner integral for each 'y'
+    # Pre-allocate vector array to hold value of inner integral for each 'indx_y' between indx_z and the end
     inner_intgr = np.empty(grid_size - indx_z, dtype=float)
 
 
     for indx_y in np.arange(indx_z,grid_size): # For each index of the array inner_intgr
 
-
         move_possible = moving_matrix[indx_z:(indx_y+1),indx_y-1] # will worker "y" accepting taking a job at x in [z,y]
 
-        inner_intgr[indx_y-indx_z] =  np.dot( move_possible * (vf_Pi[indx_z:(indx_y+1)]-vf_Pi[indx_z]) , TransProbVec(indx_z, indx_y ) )
+        inner_intgr[indx_y-indx_z] =  np.dot( move_possible * ( vf_Pi[indx_z:(indx_y+1)]-vf_Pi[indx_z] ) , trans_prob_vec(indx_z, indx_y ) )
 
 
-    return max([ 0 , q_theta/para['psi'] * np.dot( inner_intgr, phi_Hs[indx_z:]) ])
+    return max([ 0 , q_theta/para['psi'] * np.dot( inner_intgr, phi_Hs[indx_z:]) ]) # Vacancy posting rate cannot be negative
 
-
-
-#=======================================================================================================================
-# Search Threshold
-#=======================================================================================================================
-# The value at which Firms will stop firing people (because too many are leaving)
-#
-# $$ \varsigma < \frac{ \gamma z \iota^{'}(z)	}{ \iota(z) \theta q(\theta) \int_{0}^{z}[ \int_{\bar{x}(z)}^{z} g(x,y,z) dx ] \phi_{Fv}(y) \, dy  } $$
 
 def s_thresh(indx_z, moving_matrix , phi_Fv , para, theta, q_theta):
     """
-    Compute the search threshold for firm indx_z
+    Compute the search threshold for firm indx_z. When workers at firm indx_z search with an intensity above the
+    threshold, enough of them leave to become managers that the firm does not want to fire anyone (but will instead hire).
+    When the workers search with an intensity below the threshold, the firm fires workers to adjust the firm to the
+    optimal labor size each period.
+
+    This threshold value is important in determining the search intensity choice of workers.
 
     Parameters
     ----------
     indx_z: index of the firm's productivity in z_grid
 
     moving_matrix: Matrix showing which transitions between states is possible (which workers will accept)
+
+    phi_Fv: Distribution of managerial job vacancies
 
     para: Dictionary of model parameters
 
@@ -469,48 +436,41 @@ def s_thresh(indx_z, moving_matrix , phi_Fv , para, theta, q_theta):
 
     q_theta: probability a firm is matched with a worker
 
-    phi_Fv: Distribution of vacancies
 
     Returns
     -------
-    s_threshold = (float) value at which firm will be indifferent between firing or not workers
+    s_threshold = (float) value at which firm will be indifferent between firing works and not
     """
 
-    s_thres_num = para['gamma']*( 1.0/para['sigma']-1.0 ) / ( para['alpha']*( 1.0-1.0/para['sigma'] ) - 1.0 )
+    # Numerator of the threshold equation:
+    s_thres_num = para['gamma'] * ( 1.0 / para['sigma'] - 1.0 ) / ( para['alpha'] * ( 1.0 - 1.0 / para['sigma'] ) - 1.0 )
 
 
-
+    # Construct the denominator:
     inner_intgr = np.empty(indx_z+1, dtype=float) # Pre-allocate
 
-    for indx_y in np.arange(0,indx_z+1):
+    for indx_y in np.arange(0,indx_z+1): # For each grid point below indx_z
 
         move_prob = moving_matrix[indx_y:(indx_z+1),indx_z]
 
-        inner_intgr[indx_y] = np.dot( move_prob , TransProbVec(indx_y,indx_z) )
+        inner_intgr[indx_y] = np.dot( move_prob , trans_prob_vec(indx_y,indx_z) )
+
+    # inner_intgr is the expected payoff from moving to firm indx_y
+
+    return s_thres_num / ( theta * q_theta * np.dot( inner_intgr , phi_Fv[0:(indx_z+1)] ) )
 
 
-
-    return s_thres_num / ( theta * q_theta * np.dot( inner_intgr , phi_Fv[0:(indx_z+1)]) )
-
-
-
-#=======================================================================================================================
-# Search intensity - case 2 (people not geting fired)
-#=======================================================================================================================
-# Computes the search intensity of workers at firm $z_n$ when none are being fired
-#
-# $$ 	c_{s}^{'}(s(z))		= \tilde{\theta} q({\theta}) \int_{0}^{z} \left( \int_{y}^{z} \mathbb{I}_{M(x)>W(z)}[\widetilde{M}(x)-\widetilde{W}(z)]g(x,y,z)  dx \right)  \phi_{Fv}(y)  dy		 $$
-
-
-def SearchIntensity2(indx_z, moving_matrix, phi_Fv, para, vf_M, vf_W, theta, q_theta):
+def search_intensity2(indx_z, moving_matrix, phi_Fv, para, vf_M, vf_W, theta, q_theta):
     """
-    Compute the search intensity for workers at indx_z conditional upon no one is getting fired
+    Compute the search intensity for workers at indx_z conditional upon the firm NOT firing
 
     Parameters
     ----------
     indx_z: index of the firm's productivity in z_grid
 
     moving_matrix: Matrix showing which transitions between states is possible (which workers will accept)
+
+    phi_Fv: Distribution of vacancies
 
     para: Dictionary of model parameters
 
@@ -518,17 +478,14 @@ def SearchIntensity2(indx_z, moving_matrix, phi_Fv, para, vf_M, vf_W, theta, q_t
 
     vf_W: value of being a worker at each grid point
 
-    phi_Fv: Distribution of vacancies
-
     theta: labor market tightness
 
     q_theta: probability a firm is matched with a worker
 
 
-
     Returns
     -------
-    s_z = (float) search intensity choice of a worker
+    s_z = (float) search intensity choice of a worker at the firm indx_z
     """
 
 
@@ -538,22 +495,14 @@ def SearchIntensity2(indx_z, moving_matrix, phi_Fv, para, vf_M, vf_W, theta, q_t
 
         move_prob = moving_matrix[indx_y:(indx_z+1),indx_z]
 
-        inner_intgr[indx_y] = np.dot( move_prob * (vf_M[indx_y:(indx_z+1)] - vf_W[indx_z]), TransProbVec(indx_y,indx_z) )
+        inner_intgr[indx_y] = np.dot( move_prob * (vf_M[indx_y:(indx_z+1)] - vf_W[indx_z]), trans_prob_vec(indx_y,indx_z) )
 
     return 1.0/para['psi_s']* ( theta * q_theta * np.dot( inner_intgr , phi_Fv[0:(indx_z+1)]) )
 
 
-#=======================================================================================================================
-# Search intensity - case 1 (people are getting fired)
-#=======================================================================================================================
-#
-# $$ 	c_{s}^{'}(\varsigma(z))		=	\tilde{\theta} q({\theta}) \int_{0}^{z} \left( \int_{y}^{z} \mathbb{I}_{M(x)>W(y)} [\widetilde{M}(x)-\widetilde{W}(z)] g(x,y,z) \, dx \right) \, \phi_{Fv}(y) \, dy   - \tilde{\theta} q(\tilde{\theta})  \left( \int_{0}^{z} [1-G(\bar{x}(z)] \phi_{Fv})(y) \, dy \right) \left(  \int_{0}^{\infty} ( \widetilde{W}(y) - \widetilde{W}(z)) \phi_{Fw}(y) \, dy 	\right)	 $$
-
-
-
-def SearchIntensity1(indx_z, moving_matrix, phi_Fv, phi_Fw, para, vf_M, vf_W,  theta, q_theta):
+def search_intensity1(indx_z, moving_matrix, phi_Fv, phi_Fw, para, vf_M, vf_W,  theta, q_theta):
     """
-    Compute the search intensity for workers at indx_z conditional upon people being fired
+    Compute the search intensity for workers at indx_z conditional upon the firm firing
 
     Parameters
     ----------
@@ -561,19 +510,17 @@ def SearchIntensity1(indx_z, moving_matrix, phi_Fv, phi_Fw, para, vf_M, vf_W,  t
 
     moving_matrix: Matrix showing which transitions between states is possible (which workers will accept)
 
+    phi_Fv: Distribution of vacancies
+
     para: Dictionary of model parameters
 
     vf_M: value of being a manager at each grid point
 
     vf_W: value of being a worker at each grid point
 
-    phi_Fv: Distribution of vacancies
-
     theta: labor market tightness
 
     q_theta: probability a firm is matched with a worker
-
-    phi_Fw: PDF distribution of firms hiring workers
 
 
     Returns
@@ -582,10 +529,10 @@ def SearchIntensity1(indx_z, moving_matrix, phi_Fv, phi_Fw, para, vf_M, vf_W,  t
     """
 
     # First part of this equation is the same as case 2
-    first_part = SearchIntensity2(indx_z, moving_matrix, para=para, vf_M=vf_M, vf_W=vf_W, phi_Fv=phi_Fv, theta=theta, q_theta=q_theta)
+    first_part = search_intensity2(indx_z, moving_matrix, para=para, vf_M=vf_M, vf_W=vf_W, phi_Fv=phi_Fv, theta=theta, q_theta=q_theta)
 
 
-    # Second part
+    # Second part (additional term account for how search intensity impacts upon probability of being fired)
 
     Expected_vf_if_fired = np.dot( vf_W, phi_Fw) - vf_W[indx_z] # The expected value of being hired by a random hiring firm.
 
@@ -596,7 +543,7 @@ def SearchIntensity1(indx_z, moving_matrix, phi_Fv, phi_Fw, para, vf_M, vf_W,  t
 
         move_prob = moving_matrix[indx_y:(indx_z+1),indx_z]
 
-        inner_intgr[indx_y] = np.dot( move_prob, TransProbVec(indx_y,indx_z))
+        inner_intgr[indx_y] = np.dot( move_prob, trans_prob_vec(indx_y,indx_z))
 
     Prob_worker_leaves = theta * q_theta * np.dot( inner_intgr, phi_Fv[0:(indx_z+1)])
 
@@ -604,26 +551,16 @@ def SearchIntensity1(indx_z, moving_matrix, phi_Fv, phi_Fw, para, vf_M, vf_W,  t
     return first_part - 1.0/para['psi_s'] * Prob_worker_leaves * Expected_vf_if_fired
 
 
-
-
-#=======================================================================================================================
-#  Number of workers hired
-#=======================================================================================================================
-#
-# $$ hire = 	\frac{ \widetilde{A}(z) + \widetilde{B}(z}{  \int_{0}^{\infty} \widetilde{A}(y) dy + \int_{0}^{\infty} \widetilde{B}(y) dy }  $$
-#
-#
-# where
-# $$	\widetilde{A}(z) 	=		\int_{0}^{z} \max \{ 0, \iota(z)-\iota(x)-1 \}  q(\tilde{\theta})\nu_{M}(x) \left[ \int_{\bar{x}(x')}^{\infty} g(z,x,x')  \phi_{Hs}(x')  dx' \right]  \phi_{F}(x)  dx	$$
-#
-# and
-# $$ \widetilde{B}(z)	=		\max \left\{ 0  ,  \iota(z) \varsigma(y) \tilde{\theta}	q(\tilde{\theta}) \int_{0}^{z} \phi_{Fv}(x) [1-G(\bar{x},x,z)]  dx -\gamma z \iota^{'}(z)	\right\} \times	\max \left\{ 0  ,  \left( 1 - q(\tilde{\theta}) \nu_M(z) \int_{z}^{\infty} \phi_{Hs}(x^{'}) \int_{z}^{x^{'}} \mathbb{I}_{M(x)>W(x^{'})} g(x,z,x^{'})  dx  dx^{'} \right) \phi_{F}(z) \right\} $$
-
-# <codecell>
-
-def NumberWorkersHired(indx_z,moving_matrix, phi_Fv, grid_size, l_z, q_theta, v_z, phi_Hs, phi_F, s_z, theta,  para):
+def number_workers_hired(indx_z, moving_matrix, phi_Fv, grid_size, l_z, q_theta, v_z, phi_Hs, phi_F, s_z, theta,  para):
     """
-    Compute the number of new hires by a firm at indx_z
+    Compute the number of new hires by a firm at indx_z.
+
+    The number of new hires at indx_z can be decomposed into two parts:
+    *   Part A: firms who meet a manager and improve their productivity to indx_z and want to expand their firm size as
+            a result
+
+    *   Part B: Firms who were originally at indx_z, didnt improve their productivity, but had "lots" of workers leave
+            to become managers elsewhere, and wants to replace (some of) them.
 
     Parameters
     ----------
@@ -659,7 +596,7 @@ def NumberWorkersHired(indx_z,moving_matrix, phi_Fv, grid_size, l_z, q_theta, v_
 
     # PART A
 
-    starting_prod = np.empty(indx_z+1)
+    starting_prod = np.empty(indx_z+1) # Preallocate array
 
     for indx_x in np.arange(0,indx_z+1): # between 0 and z
 
@@ -667,12 +604,12 @@ def NumberWorkersHired(indx_z,moving_matrix, phi_Fv, grid_size, l_z, q_theta, v_
 
         for indx_xp in np.arange(indx_z,grid_size): # between z and infinity
 
-            g_vec[indx_xp-indx_z] = TransProbIndiv(indx_z, indx_x, indx_xp)
-
+            g_vec[indx_xp-indx_z] = trans_prob_indiv(indx_z, indx_x, indx_xp)
 
 
         move_prob = moving_matrix[ indx_z , indx_z: ]
-        starting_prod[indx_x] = max((0, l_z[indx_z] - l_z[indx_x] - 1.0  ) ) * q_theta * v_z[indx_x] * np.dot( move_prob * g_vec , phi_Hs[indx_z:] )
+
+        starting_prod[indx_x] = max((0.0 , l_z[indx_z] - l_z[indx_x] - 1.0  ) ) * q_theta * v_z[indx_x] * np.dot( move_prob * g_vec , phi_Hs[indx_z:] )
 
 
     A_z = np.dot(starting_prod , phi_F[0:(indx_z+1)])
@@ -682,67 +619,90 @@ def NumberWorkersHired(indx_z,moving_matrix, phi_Fv, grid_size, l_z, q_theta, v_
 
     # PART B
 
-    inner_intgr = np.empty(indx_z+1)
+    inner_intgr = np.empty(indx_z+1) # Preallocate array
 
     for indx_x in np.arange(0,indx_z+1):
 
-        inner_intgr[indx_x] = np.dot( moving_matrix[ indx_x:(indx_z+1) , indx_z] , TransProbVec(indx_x, indx_z) )
+        inner_intgr[indx_x] = np.dot( moving_matrix[ indx_x:(indx_z+1) , indx_z] , trans_prob_vec(indx_x, indx_z) )
+
+
+    B_z1 = l_z[indx_z] * s_z[indx_z] * theta * q_theta * np.dot( inner_intgr , phi_Fv[0:(indx_z+1)] ) -     \
+           para['gamma'] * ( 1.0/para['sigma'] - 1.0 ) / ( para['alpha']*(1.0-1.0/para['sigma']) -1.0) * l_z[indx_z]
 
 
 
-    B_z1 = l_z[indx_z] * s_z[indx_z] * theta * q_theta * np.dot( inner_intgr , phi_Fv[0:(indx_z+1)] ) - para['gamma'] * ( 1.0/para['sigma'] - 1.0 ) / ( para['alpha']*(1.0-1.0/para['sigma']) -1.0) * l_z[indx_z]
-
-
-
-
-
-    inner_intgr = np.empty(grid_size-indx_z)
+    inner_intgr = np.empty(grid_size-indx_z) # Preallocate array
 
     for indx_xp in np.arange(indx_z,grid_size):
 
-        inner_intgr[indx_xp-indx_z] = np.dot( moving_matrix[indx_z:(indx_xp+1),indx_xp] , TransProbVec(indx_z, indx_xp) )
+        inner_intgr[indx_xp-indx_z] = np.dot( moving_matrix[indx_z:(indx_xp+1),indx_xp] , trans_prob_vec(indx_z, indx_xp) )
 
     B_z2 = (1.0 - q_theta * v_z[indx_z] * np.dot( phi_Hs[indx_z:], inner_intgr )  ) * phi_F[indx_z]
 
-    B_z = max( (0 , B_z1 ) ) * max( ( 0 , B_z2 ) )
-
+    B_z = max( (0.0 , B_z1 ) ) * max( ( 0.0 , B_z2 ) )
 
 
     return A_z + B_z
 
 
+def get_new_vf_W( moving_matrix, para, grid_size, dz, phi_Fv, firm_rev, theta, q_theta, s_z, v_z, phi_Fw, phi_Hs ):
+    """
+    Given the policy rules (and holding the moving_matrix constant), compute the new value of being a worker at each
+    grid point.
+
+    We can write the worker's value function in matrix notation: A W = b
+
+    Where W is an array of the value function of workers at each grid point, A is a (grid_size x grid_size) matrix,
+    and b is an array.
+
+    See documentation for exact equations being constructed here
+
+    Parameters
+    ----------
+    moving_matrix: Matrix showing which transitions between states are possible (which manager jobs workers will accept)
+
+    para: Dictionary of model
+
+    grid_size: How many points in out state space grid
+
+    dz: step size between each productivity level in the grid space
+
+    phi_Fv: PDF of managerial job vacancy postings
+
+    firm_rev: revenue of a firm at each grid point
+
+    theta: labor market tightness
+
+    q_theta: Probability of a firm matching with a worker
+
+    s_z: policy rule worker search intensity
+
+    v_z: policy rule vacancy posting rate
+
+    phi_Fw: PDF of new worker hires
+
+    phi_Hs: PDF of worker's search intensity distribution.
 
 
-#=======================================================================================================================
-# New value function of worker
-#=======================================================================================================================
-#
-# Holding the moving_matrix fixed, and the policy choices, the value function of a worker can be written in matrix form:
-# $$ A W = b $$
-#
-# Where $A$ is a matrix, $W$=vf_W, and $b$ is a vector
-#
-#
-# $$     r  \widetilde{W}(z_n) 	=		\omega + \gamma  \widetilde{W}(z_n) -  \gamma z_n \frac{\widetilde{W}(z_n)-\widetilde{W}z_{n-1}  }{dz}	    -  \tilde{c}_{s}(\varsigma(z_n)) 		 + \varsigma(z_n) \tilde{\theta} q(\tilde{\theta}) \sum_{x=z_1}^{z_n} [\frac{\beta}{1-\beta} [\tau p(x)y(x) ] ] \sum_{y=z_1}^{x}  \mathbb{I}_{M(x)>W(z)}  g(x,y,z_n) \, \phi_{Fv}(y) \, dy	 \, dx	+ \varsigma(z_n) \tilde{\theta} q(\tilde{\theta}) \sum_{x=z_1}^{z_n} [  \widetilde{W}(x) ] \sum_{y=z_1}^{x}  \mathbb{I}_{M(x)>W(z)}  g(x,y,z_n) \, \phi_{Fv}(y) \, dy	 \, dx	 - \varsigma(z_n) \tilde{\theta} q(\tilde{\theta}) \sum_{x=z_1}^{z_n}  \widetilde{W}(z)  \sum_{y=z_1}^{x}  \mathbb{I}_{M(x)>W(z)}  g(x,y,z_n) \, \phi_{Fv}(y) \, dy	 \, dx	+ \mathbb{I}_{\Delta l<0} \Bigg[   \frac{ \gamma z_n \iota^{'}(z_n ) }{ \iota(z_n) } - \varsigma(z_n) \tilde{\theta} q(\tilde{\theta})   \sum_{y=0}^{z} \sum_{x=y}^{z} \mathbb{I}_{M(x)>W(z)} g(x,y,z) dx  \phi_{Fv}(y) dy \Bigg]  \times     \sum_{y'=0}^{\infty}  (\widetilde{W}(y')-\widetilde{W}(z))  \phi_{Fw}(y') \, d y'		 +    q(\tilde{\theta}) \nu_{M}(z) \sum_{x=z_n}^{\infty} (\widetilde{W}(x)-\widetilde{W}(z))  \sum_{y=x}^{\infty} \mathbb{I}_{M(x)>W(y)}   g(x,z,y) \, \phi_{Hs}(y)\, dy  \, dx           $$
+    Returns
+    -------
+    Array: Value of being a worker at each grid point
+    """
 
-
-def GetNewVfW(moving_matrix, para, grid_size, dz, phi_Fv, firm_rev, theta, q_theta, s_z, v_z, phi_Fw, phi_Hs):
-
-
-    # Pre-allocate matrices
+    # Pre-allocate matrices to fill
 
     A = np.zeros( (grid_size , grid_size) )
 
     b = np.zeros( grid_size )
 
-    # Start filling in points for each grid point
 
+    # Start filling in points for each grid point
     for indx_z in np.arange(0,grid_size):
 
 
         b[indx_z] = -w + para['psi_s']/2 * s_z[indx_z] ** 2
 
-        A[indx_z,indx_z] = A[indx_z,indx_z] - para['r'] + para['gamma']
+        A[indx_z,indx_z] = - para['r'] + para['gamma']
 
 
         if indx_z > 0:
@@ -760,7 +720,7 @@ def GetNewVfW(moving_matrix, para, grid_size, dz, phi_Fv, firm_rev, theta, q_the
 
             for indx_y in np.arange(0,indx_x+1):
 
-                inner_intgr[indx_y] = moving_matrix[indx_x,indx_z] * TransProbIndiv( indx_x, indx_y, indx_z) * phi_Fv[indx_y]
+                inner_intgr[indx_y] = moving_matrix[indx_x,indx_z] * trans_prob_indiv( indx_x, indx_y, indx_z) * phi_Fv[indx_y]
 
 
             b[indx_z] = b[indx_z] - s_z[indx_z] * theta * q_theta * para['beta'] / ( 1.0 - para['beta'] ) * para['tau'] * firm_rev[indx_x] *  sum(inner_intgr)
@@ -774,10 +734,9 @@ def GetNewVfW(moving_matrix, para, grid_size, dz, phi_Fv, firm_rev, theta, q_the
         for indx_y in np.arange(0,grid_size):
 
 
-            A[indx_z,indx_y] =  A[indx_z,indx_y] + ProbOfFired(indx_z,moving_matrix,para=para, theta=theta, q_theta=q_theta, phi_Fv=phi_Fv,s_z=s_z) * phi_Fw[indx_y]
+            A[indx_z,indx_y] =  A[indx_z,indx_y] + prob_being_fired(indx_z, moving_matrix, para,  theta,  q_theta,  phi_Fv, s_z) * phi_Fw[indx_y]
 
-            A[indx_z,indx_z] =  A[indx_z,indx_z] - ProbOfFired(indx_z,moving_matrix,para=para, theta=theta, q_theta=q_theta, phi_Fv=phi_Fv,s_z=s_z) * phi_Fw[indx_y]
-
+            A[indx_z,indx_z] =  A[indx_z,indx_z] - prob_being_fired(indx_z, moving_matrix, para,  theta,  q_theta,  phi_Fv, s_z) * phi_Fw[indx_y]
 
 
 
@@ -786,7 +745,7 @@ def GetNewVfW(moving_matrix, para, grid_size, dz, phi_Fv, firm_rev, theta, q_the
             g_vec = np.empty(grid_size-indx_x)
 
             for indx_y in np.arange(indx_x,grid_size):
-                g_vec[indx_y-indx_x] = TransProbIndiv(indx_x,indx_z,indx_y)
+                g_vec[indx_y-indx_x] = trans_prob_indiv(indx_x,indx_z,indx_y)
 
 
             A[indx_z,indx_x] = A[indx_z,indx_x] + q_theta * v_z[indx_z] * np.dot(  moving_matrix[indx_x, indx_x: ] * g_vec , phi_Hs[indx_x:]  )
@@ -796,26 +755,40 @@ def GetNewVfW(moving_matrix, para, grid_size, dz, phi_Fv, firm_rev, theta, q_the
 
 
     # Solve model
-    tmp = np.linalg.solve(A, b)
-
-    return tmp
+    return np.linalg.solve(A, b)
 
 
+def prob_being_fired(indx_z, moving_matrix, para, theta, q_theta, phi_Fv, s_z):
+    """
+    The probability that an individual worker at firm indx_z is fired by the firm downsizing
 
-#=======================================================================================================================
-# Probability of worker being fired
-#=======================================================================================================================
-#
-# $$ \mathbb{I}_{\Delta l<0} \Bigg[   \frac{ \gamma z_n \iota^{'}(z_n ) }{ \iota(z_n) } - \varsigma(z_n) \tilde{\theta} q(\tilde{\theta})   \sum_{y=0}^{z} \sum_{x=y}^{z} \mathbb{I}_{M(x)>W(z)} g(x,y,z) dx  \phi_{Fv}(y) dy \Bigg] $$
+    Parameters
+    ----------
+    indx_z: Index of the firm's productivity in z_grid
 
-def ProbOfFired(indx_z,moving_matrix,para, theta, q_theta, phi_Fv,s_z):
+    moving_matrix: Matrix showing which transitions between states are possible (which manager jobs workers will accept)
 
+    para: Dictionary of model
+
+    theta: labor market tightness
+
+    q_theta: Probability of a firm matching with a worker
+
+    phi_Fw: PDF of new worker hires
+
+    v_z: policy rule vacancy posting rate
+
+
+    Returns
+    -------
+    Float: Probability of being fired
+    """
 
     inner_intgr = np.empty(indx_z+1 )
 
     for indx_y in np.arange(0,(indx_z+1) ):
 
-        inner_intgr[indx_y] =  np.dot( moving_matrix[ indx_y:(indx_z+1) , indx_z] , TransProbVec(indx_y,indx_z) )
+        inner_intgr[indx_y] =  np.dot( moving_matrix[ indx_y:(indx_z+1) , indx_z] , trans_prob_vec(indx_y,indx_z) )
 
     # Desired (abs) change in labor - num. workers who leave
     tmp = para['gamma'] * ( 1.0/para['sigma'] - 1.0 ) / ( para['alpha']*(1.0-1.0/para['sigma']) - 1.0 )    - s_z[indx_z] * theta * q_theta * np.dot(inner_intgr , phi_Fv[:(indx_z+1) ] )
@@ -823,19 +796,43 @@ def ProbOfFired(indx_z,moving_matrix,para, theta, q_theta, phi_Fv,s_z):
     return max( (0,tmp) )
 
 
+def get_new_vf_Pi(mu_z, moving_matrix, para, firm_rev, w, l_z, v_z, dz, q_theta, phi_Hs, z_grid=z_grid ):
+    """
+    Given the policy rules, managerial payment mu, (and holding the moving_matrix constant), compute the new value of
+    being a firm at each grid point.
+
+    We can write the firm's value function in matrix notation: A Pi = b
+
+    Where Pi is an array of the value function of firms at each grid point, A is a (grid_size x grid_size) matrix,
+    and b is an array.
+
+    See documentation for exact equations being constructed here
+
+    Parameters
+    ----------
+    mu_z: Vector of managerial payments to managers at each grid point
+
+    moving_matrix: Matrix showing which transitions between states are possible (which manager jobs workers will accept)
+
+    para: Dictionary of model
+
+    firm_rev: revenue of a firm at each grid point
+
+    w: Market clearing wage
+
+    l_z: Number of workers hired by a firm at each grid point
+
+    v_z: policy rule vacancy posting rate
+
+    dz: step size between each productivity level in the grid space
+
+    q_theta: Probability of a firm matching with a worker
 
 
-#=======================================================================================================================
-#   New value function of the firm
-#=======================================================================================================================
-#
-# Holding the moving_matrix fixed, and the policy choices, and the managerial payment ($\mu$), the value function of a firm can be written in matrix form:
-# $$ A \Pi = b $$
-#
-# Where $A$ is a matrix, $\Pi$=vf_Pi, and $b$ is a vector
-
-def GetNewVfPi(mu_z, moving_matrix, para, firm_rev, w, l_z, v_z, dz, q_theta ):
-
+    Returns
+    -------
+    Array: Value of being a worker at each grid point
+    """
 
    # Pre-allocate matrices
 
@@ -844,7 +841,6 @@ def GetNewVfPi(mu_z, moving_matrix, para, firm_rev, w, l_z, v_z, dz, q_theta ):
     b = np.zeros( grid_size )
 
     # Start filling in points for each grid point
-
     for indx_z in np.arange(0,grid_size):
 
 
@@ -863,15 +859,13 @@ def GetNewVfPi(mu_z, moving_matrix, para, firm_rev, w, l_z, v_z, dz, q_theta ):
 
 
 
-        inner_intgr = np.empty(grid_size-indx_z)
-
         for indx_x in np.arange(indx_z,grid_size):
 
 
             g_vec = np.empty(grid_size-indx_x)
 
             for indx_y in np.arange(indx_x,grid_size):
-                g_vec[indx_y-indx_x] = TransProbIndiv(indx_x,indx_z,indx_y)
+                g_vec[indx_y-indx_x] = trans_prob_indiv(indx_x,indx_z,indx_y)
 
 
 
@@ -882,34 +876,60 @@ def GetNewVfPi(mu_z, moving_matrix, para, firm_rev, w, l_z, v_z, dz, q_theta ):
 
 
     # Solve system of equations
-    tmp = np.linalg.solve(A, b)
-
-    return tmp
+    return np.linalg.solve(A, b)
 
 
+def find_policy_rules(v_z, s_z, vf_M, vf_W, vf_Pi, para, q_theta, phi_Hs, phi_F, phi_Hw, l_z):
+    """
+    Given the value functions and distribution of productivity, solve for the policy rules s_z and v_z that maximise
+    the value functions. This is carried out in each iteration of the main algorithm.
 
-#=======================================================================================================================
-#   Solve for the policy rules (given phi_F and value functions).
-#=======================================================================================================================
-#
+    Parameters
+    ----------
+    v_z: Initial guess of the vacancy posting rate
+
+    s_z: Initial guess of the worker search intensity
+
+    vf_M: value of being a manager at each grid point
+
+    vf_W: value of being a worker at each grid point
+
+    vf_Pi: value of a firm at each grid point
+
+    para: Dictionary of model parameters
+
+    phi_F: PDF of firm productivity
+
+    phi_Hw: PDF of labor distribution
+
+    l_z: Number of workers employed by a firm at each grid point
 
 
-def FindPolicyRules(v_z, s_z, vf_M, vf_W, vf_Pi, para, q_theta, phi_Hs, phi_F, phi_Hw, l_z):
+    Returns
+    -------
+    v_z = (array) vacancy posting rate
+
+    s_z = (array) search intensity choice of a worker
+
+    iter_count_pol = (float) number of iteration taken to converge
+    """
+
+    # Construct the matrix showing which managerial positions each worker will accept if matched with
+    moving_matrix = create_move_matrix(vf_M, vf_W)
 
 
-    moving_matrix = CreateMoveMatrix(vf_M, vf_W)
+    for iter_count_pol in np.arange(0,max_pol_iter+1): # run loop until policy rules converge or max_pol_iter reached
 
-
-    for iter_count_pol in np.arange(0,max_pol_iter+1):
-
+        # Store the policy rules from the last loop so we can see if the policy rules have converged after this loop
         v_z_old = np.copy(v_z)
         s_z_old = np.copy(s_z)
+
 
         for indx_zn in np.arange(0,grid_size): # For each grid point
 
             # Update vacancy posting rate of firm
             #============================================================
-            v_z_new = VacPost(indx_zn, moving_matrix, para=para, q_theta=q_theta, vf_Pi=vf_Pi,  phi_Hs=phi_Hs) # new vacancy posting rate for firm indx_zn
+            v_z_new = vac_post_rate(indx_zn, moving_matrix, para, q_theta, vf_Pi, phi_Hs) # new vacancy posting rate for firm indx_zn
 
             v_z[indx_zn] = ff_pol * v_z_new + (1.0-ff_pol) * v_z_old[indx_zn] # Applying the fudge factor
 
@@ -928,12 +948,12 @@ def FindPolicyRules(v_z, s_z, vf_M, vf_W, vf_Pi, para, q_theta, phi_Hs, phi_F, p
 
             #Update distribution of worker hires
             #============================================================
-
             new_hires = np.empty(grid_size)
 
             for indx_zj in np.arange(0,grid_size): # For each firm on the grid, computer the number of new hires
 
-                new_hires[indx_zj] = NumberWorkersHired(indx_zj,moving_matrix,phi_Fv, grid_size=grid_size, l_z=l_z, q_theta=q_theta, v_z=v_z, phi_Hs=phi_Hs, phi_F=phi_F, s_z=s_z, theta=theta,  para=para)
+                new_hires[indx_zj] = number_workers_hired(indx_zj,moving_matrix,phi_Fv, grid_size, l_z, q_theta, v_z,
+                                                        phi_Hs, phi_F, s_z, theta, para)
 
 
             phi_Fw = new_hires / sum(new_hires) # Convert number of hires into PDF
@@ -944,21 +964,18 @@ def FindPolicyRules(v_z, s_z, vf_M, vf_W, vf_Pi, para, q_theta, phi_Hs, phi_F, p
             #============================================================
 
             # Compute threshold
-            search_threshold = s_thresh(indx_zn, moving_matrix , phi_Fv , para=para, theta=theta, q_theta=q_theta)
+            search_threshold = s_thresh(indx_zn, moving_matrix , phi_Fv , para, theta, q_theta)
 
-            search1 = SearchIntensity1(indx_zn, moving_matrix, phi_Fv, phi_Fw, para=para, vf_M=vf_M, vf_W=vf_W,  theta=theta, q_theta=q_theta)
-            search2 = SearchIntensity2(indx_zn, moving_matrix, phi_Fv, para=para, vf_M=vf_M, vf_W=vf_W, theta=theta, q_theta=q_theta)
+            search1 = search_intensity1(indx_zn, moving_matrix, phi_Fv, phi_Fw, para, vf_M, vf_W,  theta, q_theta)
+            search2 = search_intensity2(indx_zn, moving_matrix, phi_Fv, para, vf_M, vf_W, theta, q_theta)
 
-            s_z_new = (search1<search_threshold) * search1 + (search2>search_threshold)*search2
-
-
+            s_z_new = (search1 < search_threshold) * search1 + (search2 > search_threshold) * search2
 
 
-            s_z[indx_zn] = ff_pol*max([s_z_new, 0]) + (1.0-ff_pol)*s_z_old[indx_zn]
+            s_z[indx_zn] = ff_pol * max([s_z_new, 0]) + (1.0 - ff_pol) * s_z_old[indx_zn]
 
 
             phi_Hs = s_z * phi_Hw  / np.dot( s_z , phi_Hw )
-
 
 
             # Update labor market tightness
@@ -979,99 +996,42 @@ def FindPolicyRules(v_z, s_z, vf_M, vf_W, vf_Pi, para, q_theta, phi_Hs, phi_F, p
             break
 
 
+        if iter_count_pol == max_pol_iter:
 
-    return v_z, s_z, iter_count_pol
+            print 'WARNING: Maximum number of policy iterations reached. Results may be inaccurate'
 
-
-
-
-
+    return v_z, s_z
 
 
+def compute_mu(vf_M, vf_W, q_theta, para, phi_Hs , z_grid=z_grid):
+    """
+    Find the managerial payment (mu) that makes the profit sharing equation hold true
+
+    Parameters
+    ----------
+    vf_M: value of being a manager at each grid point
+
+    vf_W: value of being a worker at each grid point
+
+    q_theta: probability a firm matches with a worker
+
+    para: Dictionary of model parameters
+
+    phi_Hs: PDF of searching workers
+
+    z_grid: state space grid
 
 
+    Returns
+    -------
+    mu_z = (array) managerial payment
+    """
 
-
-
-
-########################################################################################################################
-#                                        EXECUTE THE ALGORITHM
-########################################################################################################################
-
-
-phi_F_old = np.copy(phi_F)
-gamma_old = para['gamma']
-
-#=======================================================================================================================
-# Step zero: Given phi_F, update variable that only depend on it
-#=======================================================================================================================
-l_z         = LaborDemand(para, z_grid, phi_F)
-phi_Hw      = DistWorkers(para, z_grid, phi_F)
-#Y           = GDP(para, z_grid, phi_F)
-w           = Wages(para, z_grid, phi_F)
-firm_rev    = FirmRev(para, z_grid, phi_F)
-
-
-
-#=======================================================================================================================
-# Step 1) Given phi_F, solve for value function and policy rules
-#=======================================================================================================================
-
-for iter_count_vf in np.arange(1,max_vf_iter+1):
-
-    print iter_count_vf
-
-    vf_M_old = np.copy(vf_M)
-    vf_W_old = np.copy(vf_W)
-    vf_Pi_old = np.copy(vf_Pi)
-
-
-
-    #-------------------------------------------------------------------------------------------------------------------
-    # Step 1.1) Given phi_F and value functions, find policy rule
-    #-------------------------------------------------------------------------------------------------------------------
-    v_z, s_z, iter_count_pol = FindPolicyRules(v_z, s_z, vf_M, vf_W, vf_Pi, para, q_theta, phi_Hs, phi_F, phi_Hw, l_z)
-
-    if iter_count_pol == max_pol_iter:
-        print "Warning: maximum number of policy iterations exceeded. Results may be inacuurate"
-
-
-
-
-    #---------------------------------------------------------------------------------------------------------------
-    # Step 1.2) Given phi_F and policy rules, update value functions
-    #---------------------------------------------------------------------------------------------------------------
-    moving_matrix = CreateMoveMatrix(vf_M,vf_W)
-
-    phi_Fv = v_z * phi_F / np.dot( v_z , phi_F  )
-    theta = np.dot( v_z , phi_F ) / np.dot( para['N'] * s_z , phi_Hw)
-    q_theta = para['q_norm'] * theta ** para['q_cd']
-    phi_Hs  =   s_z * phi_Hw  / np.dot( s_z , phi_Hw )
-
-    new_hires = np.empty(grid_size)
-    for indx_zj in np.arange(0,grid_size): # For each firm on the grid, computer the number of new hires
-            new_hires[indx_zj] = NumberWorkersHired(indx_zj,moving_matrix,phi_Fv, grid_size=grid_size, l_z=l_z, q_theta=q_theta, v_z=v_z, phi_Hs=phi_Hs, phi_F=phi_F, s_z=s_z, theta=theta,  para=para)
-    phi_Fw = new_hires / sum(new_hires) # Convert number of hires into PDF
-
-
-
-    # Make new draw for vf_W
-    vf_W_new = GetNewVfW(moving_matrix, para=para, grid_size=grid_size, dz=dz, phi_Fv=phi_Fv, firm_rev=firm_rev, theta=theta, q_theta=q_theta, s_z=s_z, v_z=v_z, phi_Fw=phi_Fw, phi_Hs=phi_Hs)
-
-    # Compute implied values for vf_M
-    vf_M_new = para['beta']/(1.0-para['beta'])*para['tau']*firm_rev + vf_W_new
-
-
-
-    moving_matrix_new = CreateMoveMatrix(vf_M_new,vf_W_new)
-
-
-    # Given vf_M, solve for the managerial payment mu
     mu_z = np.empty(grid_size)
 
     for indx_z in np.arange(0,grid_size):
         if indx_z>0:
-            dMdz = ( vf_M_new[indx_z] - vf_M_new[indx_z-1] ) / dz
+            dMdz = ( vf_M[indx_z] - vf_M[indx_z-1] ) / dz
         else:
             dMdz = 0
 
@@ -1079,37 +1039,165 @@ for iter_count_vf in np.arange(1,max_vf_iter+1):
 
         for indx_y in np.arange(indx_z , grid_size ):
 
-            inner_intgr[indx_y-indx_z] =  np.dot( moving_matrix_new[ indx_z:(indx_y+1) ,indx_y ] * ( vf_W_new[ indx_z:(indx_y+1) ] - vf_M_new[indx_z] )  , TransProbVec(indx_z, indx_y) )
+            inner_intgr[indx_y-indx_z] =  np.dot( moving_matrix_new[ indx_z:(indx_y+1) ,indx_y ] * ( vf_W[ indx_z:(indx_y+1) ] - vf_M[indx_z] )  , trans_prob_vec(indx_z, indx_y) )
 
 
-        mu_z[indx_z] = ( para['r'] - para['gamma'] )*vf_M_new[indx_z] + para['gamma']*z_grid[indx_z] * dMdz - q_theta * v_z[indx_z] * np.dot( inner_intgr , phi_Hs[indx_z:] )
+        mu_z[indx_z] = ( para['r'] - para['gamma'] )*vf_M[indx_z] + para['gamma']*z_grid[indx_z] * dMdz - q_theta * v_z[indx_z] * np.dot( inner_intgr , phi_Hs[indx_z:] )
+
+    return mu_z
 
 
+
+
+########################################################################################################################
+#   INITIAL GUESSES
+########################################################################################################################
+# Define the initial values for value functions and policy rules. This is needed to start the algorithm.
+
+
+
+# Initial guesses for value functions
+#----------------------------------------------------------
+# The initial guess is based on the firms and workers continuing to receive their current income flow for all of eternity
+
+# Compute the income flows etc
+firm_rev    = firm_revenue( para, z_grid, phi_F )
+w           = wages( para, z_grid, phi_F )
+l_z         = labor_demand( para, z_grid, phi_F )
+
+
+# Initial guess of the value function for firms (assuming managerial pay = 0)
+vf_Pi   = ( firm_rev - w * l_z ) / ( para['r'] - para['gamma'] )
+
+# Initial guess of the value function of workers
+vf_W    = w / ( para['r'] - para['gamma'] ) * np.ones(grid_size)
+
+# Initial guess of the value function of managers (based on manager profit sharing rule in the model)
+vf_M = para['beta']/(1.0-para['beta'])*para['tau']*firm_rev + vf_W
+
+# The initial guesses may not be that great. Therefore, we insure that the value of being a manager at a firm is at
+# least as good as being a worker at the same firm
+vf_M[vf_M < vf_W] = vf_W[vf_M < vf_W] + 0.000001
+
+
+
+
+# Initial guesses for policy rules
+#----------------------------------------------------------
+
+s_z = np.ones(grid_size)  # Guess for worker search intensity
+
+v_z = np.ones(grid_size)  # Guess for firm's vacancy posting rate
+
+# Initial distribution of labor (phi_Hw) and worker's search intensity (phi_Hs) based on s_z
+phi_Hw = l_z * phi_F / np.dot( l_z, phi_F )
+
+phi_Hs = s_z  * phi_Hw / np.dot( s_z , phi_Hw  )
+
+
+
+# Initial guess for labor market conditions
+#----------------------------------------------------------
+
+theta   = 1.0 / para['N']       # Guess for labor market tightness
+q_theta = para['q_norm'] * theta ** para['q_cd']    # Probability of matching with a worker given theta
+
+
+
+
+########################################################################################################################
+#   EXECUTE THE ALGORITHM
+########################################################################################################################
+
+#===================================================================================================================
+# Step zero: Given phi_F, update variable that only depend on it
+#===================================================================================================================
+l_z         = labor_demand(para, z_grid, phi_F)
+phi_Hw      = dist_workers(para, z_grid, phi_F)
+Y           = gdp(para, z_grid, phi_F)
+w           = wages(para, z_grid, phi_F)
+firm_rev    = firm_revenue(para, z_grid, phi_F)
+
+
+
+for iter_count_vf in np.arange(1,max_vf_iter+1): # While the value functions are still different
+
+    print iter_count_vf
+
+    # Store old value functions so we can check if value functions have converged
+    vf_M_old = np.copy(vf_M)
+    vf_W_old = np.copy(vf_W)
+    vf_Pi_old = np.copy(vf_Pi)
+
+
+
+    #---------------------------------------------------------------------------------------------------------------
+    # Step 1) Given phi_F and value functions, find policy rule
+    #---------------------------------------------------------------------------------------------------------------
+    v_z, s_z = find_policy_rules(v_z, s_z, vf_M, vf_W, vf_Pi, para, q_theta, phi_Hs, phi_F, phi_Hw, l_z)
+
+
+
+
+    #---------------------------------------------------------------------------------------------------------------
+    # Step 2) Given phi_F and policy rules, update value functions
+    #---------------------------------------------------------------------------------------------------------------
+    moving_matrix = create_move_matrix(vf_M,vf_W)
+
+    # Update variables the are directly dependent upon the policy rules
+    phi_Fv  = v_z * phi_F / np.dot( v_z , phi_F  )                      # Distribution of vacancy postings
+    theta   = np.dot( v_z , phi_F ) / np.dot( para['N'] * s_z , phi_Hw) # Labor market tightness
+    q_theta = para['q_norm'] * theta ** para['q_cd']                    # Prob of a firm matching with a worker
+    phi_Hs  =   s_z * phi_Hw  / np.dot( s_z , phi_Hw )                  # Distribution of worker search intensity
+
+    new_hires = np.empty(grid_size)
+    for indx_zj in np.arange(0,grid_size): # For each firm on the grid, computer the number of new hires
+            new_hires[indx_zj] = number_workers_hired(indx_zj,moving_matrix,phi_Fv, grid_size, l_z, q_theta, v_z,
+                                                    phi_Hs, phi_F, s_z, theta, para)
+    phi_Fw = new_hires / sum(new_hires) # Convert number of hires into PDF
+
+
+
+    # Make new draw for vf_W
+    vf_W_new = get_new_vf_W(moving_matrix, para, grid_size, dz, phi_Fv, firm_rev, theta, q_theta, s_z, v_z, phi_Fw, phi_Hs)
+
+    # Compute implied values for vf_M
+    vf_M_new = para['beta'] / (1.0-para['beta']) * para['tau'] * firm_rev + vf_W_new
+
+
+    # Update moving matrix based on new value functions
+    moving_matrix_new = create_move_matrix(vf_M_new,vf_W_new)
+
+
+    # Given vf_M, solve for the managerial payment mu
+    mu_z = compute_mu(vf_M_new, vf_W_new, q_theta, para, phi_Hs)
 
 
     # Solve for the firm's value function
-    vf_Pi_new = GetNewVfPi(mu_z, moving_matrix_new, para, firm_rev, w, l_z, v_z, dz, q_theta )
+    vf_Pi_new = get_new_vf_Pi(mu_z, moving_matrix_new, para, firm_rev, w, l_z, v_z, dz, q_theta, phi_Hs)
 
 
     # Check for convergence of the value function
-    max_Pi_diff = max(abs(vf_Pi_new-vf_Pi_old))
-    max_W_diff  = max(abs(vf_W_new-vf_W_old))
-    max_M_diff  = max(abs(vf_M_new-vf_M_old))
+    Pi_diff = max(abs(vf_Pi_new-vf_Pi_old))
+    W_diff  = max(abs(vf_W_new-vf_W_old))
+    M_diff  = max(abs(vf_M_new-vf_M_old))
 
 
-    max_vf_diff = max([max_M_diff, max_W_diff, max_Pi_diff ])
+    vf_diff = max([M_diff, W_diff, Pi_diff ])
 
 
-    if max_vf_diff < tol_vf:
+    # Update value function estimates
+    vf_Pi = ff_pol*vf_Pi_new + (1.0-ff_pol)*vf_Pi_old
+    vf_M  = ff_pol*vf_M_new  + (1.0-ff_pol)*vf_M_old
+    vf_W  = ff_pol*vf_W_new  + (1.0-ff_pol)*vf_W_old
+
+
+
+    if vf_diff < tol_vf:
         break
-    else:
-        vf_Pi = ff_pol*vf_Pi_new + (1.0-ff_pol)*vf_Pi_old
-        vf_M  = ff_pol*vf_M_new  + (1.0-ff_pol)*vf_M_old
-        vf_W  = ff_pol*vf_W_new  + (1.0-ff_pol)*vf_W_old
 
-
-
-
+    if iter_count_vf == max_vf_iter:
+        print 'WARNING: Maximum number of value function iterations reached. Results may be inaccurate'
 
 
 print "Model has completed running"
